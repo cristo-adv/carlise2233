@@ -1,0 +1,748 @@
+# -*- coding: utf-8 -*-
+"""CARLISE 2233 - SISTEMA DE GESTAO ELEITORAL."""
+import os, re, sqlite3
+from functools import wraps
+from flask import Flask, g, request, redirect, url_for, session, render_template, flash, jsonify
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+URL = (os.environ.get("DATABASE_URL") or "").strip()
+app = Flask(__name__)
+app.secret_key = "carlise2233-chave-local"
+USAR_PG = bool(URL)
+
+def conectar():
+    if USAR_PG:
+        import psycopg2
+        return psycopg2.connect(URL)
+    conn = sqlite3.connect(os.path.join(BASE_DIR, "sistema.db"))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+def get_db():
+    if "conn" not in g:
+        g.conn = conectar()
+    return g.conn
+
+@app.teardown_appcontext
+def fechar(exc):
+    conn = g.pop("conn", None)
+    if conn is not None:
+        try:
+            conn.commit() if not exc else conn.rollback()
+        except Exception:
+            pass
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+def prep(sql):
+    return sql.replace("%s", "?") if not USAR_PG else sql
+
+def executar(sql, params=()):
+    cur = get_db().cursor()
+    cur.execute(prep(sql), tuple(params))
+    return cur
+
+def alterar(sql, params=()):
+    executar(sql, params)
+    get_db().commit()
+
+def inserir(sql, params=()):
+    cur = executar(sql + (" RETURNING id" if USAR_PG else ""), params)
+    get_db().commit()
+    if USAR_PG:
+        linha = cur.fetchone()
+        return linha[0] if linha else None
+    return cur.lastrowid
+
+def listar(sql, params=()):
+    cur = executar(sql, params)
+    linhas = cur.fetchall()
+    if not linhas:
+        return []
+    if isinstance(linhas[0], dict):
+        return [dict(l) for l in linhas]
+    if hasattr(linhas[0], "keys"):
+        return [dict(l) for l in linhas]
+    cols = [d[0] for d in cur.description]
+    return [dict(zip(cols, l)) for l in linhas]
+
+def buscar(sql, params=()):
+    linhas = listar(sql, params)
+    return linhas[0] if linhas else None
+
+def contar(tabela):
+    lin = buscar("SELECT COUNT(*) AS n FROM " + tabela)
+    return (lin or {}).get("n") or 0
+
+def sane(v):
+    return (v or "").strip()
+
+def dig(v):
+    return re.sub(r"\D", "", v or "")
+
+def norm_txt(v):
+    return sane(v).upper()
+
+def parse_moeda(v):
+    """Converte 'R$ 1.500,00' / '1500' / '1500,50' em numero float."""
+    t = (v or "").replace("R$", "").replace(" ", "").replace(".", "").replace(",", ".")
+    try:
+        return float(t) or 0
+    except ValueError:
+        return 0
+
+
+def colunas_existem(cur, tabela):
+    if USAR_PG:
+        cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name=%s", (tabela,))
+        return [r[0] for r in cur.fetchall()]
+    cur.execute("PRAGMA table_info(" + tabela + ")")
+    return [r[1] for r in cur.fetchall()]
+
+def init_db():
+    conn = conectar()
+    cur = conn.cursor()
+    tipo_id = "id SERIAL PRIMARY KEY" if USAR_PG else "id INTEGER PRIMARY KEY AUTOINCREMENT"
+    def cria(nome, cols):
+        sql = "CREATE TABLE IF NOT EXISTS " + nome + " (" + tipo_id + ", " + ", ".join(cols) + ")"
+        cur.execute(prep(sql) if not USAR_PG else sql)
+    cria("usuarios", ["usuario TEXT UNIQUE", "senha TEXT"])
+    cria("pessoas", ["nome TEXT", "cpf TEXT UNIQUE", "rg TEXT", "tipo TEXT", "funcao TEXT",
+                     "tratamento TEXT", "nascimento TEXT", "telefone TEXT",
+                     "celular TEXT", "email TEXT", "estado_civil TEXT",
+                     "endereco TEXT", "numero TEXT", "complemento TEXT", "bairro TEXT",
+                     "municipio TEXT", "cep TEXT", "titulo_eleitor TEXT",
+                     "zona TEXT", "secao TEXT", "local_votacao TEXT", "observacoes TEXT"])
+    cria("veiculos", ["pessoa_id INTEGER", "placa TEXT", "modelo TEXT", "tipo TEXT",
+                      "combustivel TEXT", "tipo_veiculo TEXT", "adesivagem TEXT",
+                      "motorista TEXT", "municipio TEXT", "status TEXT"])
+    cria("contratos", ["pessoa_id INTEGER", "descricao TEXT", "valor REAL",
+                       "data_inicio TEXT", "data_fim TEXT", "status TEXT"])
+    cria("demandas", ["pessoa_id INTEGER", "tipo TEXT", "descricao TEXT",
+                      "responsavel TEXT", "data TEXT", "status TEXT"])
+    cria("doacoes", ["pessoa_id INTEGER", "tipo TEXT", "descricao TEXT", "valor REAL", "data TEXT"])
+    cria("cargos", ["pessoa_id INTEGER", "cargo TEXT", "localidade TEXT", "status TEXT"])
+    cria("autorizacoes", ["pessoa_id INTEGER", "descricao TEXT", "data TEXT", "status TEXT"])
+    cria("kits", ["pessoa_id INTEGER", "nome TEXT", "envio TEXT", "status TEXT"])
+    cria("kit_itens", ["kit_id INTEGER", "material TEXT", "quantidade INTEGER"])
+    # Migracoes automaticas
+    cols = colunas_existem(cur, "pessoas")
+    for nome, tipo in [("rg", "TEXT"), ("complemento", "TEXT"), ("local_votacao", "TEXT")]:
+        if nome not in cols:
+            cur.execute("ALTER TABLE pessoas ADD COLUMN " + nome + " " + tipo)
+    cols = colunas_existem(cur, "veiculos")
+    for nome, tipo in [("motorista", "TEXT"), ("combustivel", "TEXT"), ("tipo_veiculo", "TEXT")]:
+        if nome not in cols:
+            cur.execute("ALTER TABLE veiculos ADD COLUMN " + nome + " " + tipo)
+    cols = colunas_existem(cur, "contratos")
+    for nome, tipo in [("tipo", "TEXT"), ("forma_pagamento", "TEXT"),
+                       ("vencimento", "TEXT"), ("responsavel", "TEXT")]:
+        if nome not in cols:
+            cur.execute("ALTER TABLE contratos ADD COLUMN " + nome + " " + tipo)
+    cols = colunas_existem(cur, "demandas")
+    for nome, tipo in [("municipio", "TEXT"), ("prioridade", "TEXT")]:
+        if nome not in cols:
+            cur.execute("ALTER TABLE demandas ADD COLUMN " + nome + " " + tipo)
+    cols = colunas_existem(cur, "doacoes")
+    for nome, tipo in [("forma_recebimento", "TEXT"), ("recibo", "TEXT"), ("status", "TEXT")]:
+        if nome not in cols:
+            cur.execute("ALTER TABLE doacoes ADD COLUMN " + nome + " " + tipo)
+    cols = colunas_existem(cur, "cargos")
+    if "tipo_estrutura" not in cols:
+        cur.execute("ALTER TABLE cargos ADD COLUMN tipo_estrutura TEXT")
+    cols = colunas_existem(cur, "autorizacoes")
+    for nome, tipo in [("tipo", "TEXT"), ("valor", "REAL"), ("responsavel", "TEXT")]:
+        if nome not in cols:
+            cur.execute("ALTER TABLE autorizacoes ADD COLUMN " + nome + " " + tipo)
+    cols = colunas_existem(cur, "kit_itens")
+    if "volume" not in cols:
+        cur.execute("ALTER TABLE kit_itens ADD COLUMN volume TEXT")
+
+    if USAR_PG:
+        cur.execute("SELECT 1 FROM usuarios WHERE usuario = %s", ("admin",))
+        if cur.fetchone() is None:
+            cur.execute("INSERT INTO usuarios (usuario, senha) VALUES (%s, %s)", ("admin", "admin123"))
+    else:
+        cur.execute("SELECT 1 FROM usuarios WHERE usuario = ?", ("admin",))
+        if cur.fetchone() is None:
+            cur.execute("INSERT INTO usuarios (usuario, senha) VALUES (?, ?)", ("admin", "admin123"))
+    conn.commit()
+    try:
+        conn.close()
+    except Exception:
+        pass
+
+def login_obrigatorio(f):
+    @wraps(f)
+    def env(*a, **k):
+        if not session.get("user"):
+            return redirect(url_for("login"))
+        return f(*a, **k)
+    return env
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        u = sane(request.form.get("usuario"))
+        s = sane(request.form.get("senha"))
+        lin = buscar("SELECT usuario FROM usuarios WHERE usuario=%s AND senha=%s", (u, s))
+        if lin:
+            session["user"] = u
+            return redirect(url_for("dashboard"))
+        flash("Usuario ou senha invalidos.", "erro")
+    return render_template("login.html")
+
+@app.route("/sair")
+def sair():
+    session.clear()
+    return redirect(url_for("login"))
+
+@app.route("/")
+@login_obrigatorio
+def dashboard():
+    dados = {"pessoas": contar("pessoas"), "veiculos": contar("veiculos"),
+             "contratos": contar("contratos"), "demandas": contar("demandas"),
+             "doacoes": contar("doacoes"), "cargos": contar("cargos"),
+             "autorizacoes": contar("autorizacoes"), "kits": contar("kits")}
+    return render_template("dashboard.html", dados=dados)
+
+TRATAMENTOS = ["DONA", "DR", "DRA", "PROF", "PROFA", "SR", "SRA", "SRTA"]
+
+TIPOS = ["CABO ELEITORAL", "CANDIDATO", "COLABORADOR", "COMISSIONADO", "CONTRATADO",
+         "DEPUTADO ESTADUAL", "DEPUTADO FEDERAL", "ELEITOR", "EX CANDIDATO",
+         "FUNCIONARIO", "GOVERNADOR", "LIDERANCA", "OUTRO", "PREFEITO",
+         "SENADOR", "VEREADOR", "VICE", "VOLUNTARIO"]
+FUNCOES = ['ASSESSOR', 'CABO ELEITORAL', 'COORDENADOR DE NUCLEO', 'COORDENADOR GERAL', 'COORDENADOR LOCAL', 'COORDENADOR REGIONAL', 'FINANCEIRO', 'FISCAL DE SECAO', 'IMPRENSA', 'JURIDICO', 'LIDERANCA', 'MARKETING', 'MOBILIZADOR', 'MOTORISTA', 'OUTRO', 'RECEPCAO', 'SECRETARIO', 'TESOUREIRO', 'VOLUNTARIO']
+
+
+MODELOS_VEICULOS = ["VW GOL", "VW VOYAGE", "VW T-CROSS", "VW POLO", "VW SAVEIRO",
+                    "CHEVROLET ONIX", "CHEVROLET CRUZE", "CHEVROLET S10", "CHEVROLET TRACKER",
+                    "FIAT ARGO", "FIAT MOBI", "FIAT TORO", "FIAT STRADA",
+                    "TOYOTA COROLLA", "TOYOTA HILUX", "TOYOTA YARIS",
+                    "HONDA CIVIC", "HONDA HR-V", "HYUNDAI HB20", "HYUNDAI CRETA",
+                    "JEEP RENEGADE", "JEEP COMPASS", "NISSAN KICKS", "RENAULT KWID",
+                    "FORD RANGER", "PEUGEOT 208", "CITROEN C3", "OUTRO"]
+
+COMBUSTIVEIS = ["GASOLINA", "ETANOL", "DIESEL", "FLEX", "GNV", "ELETRICO"]
+
+TIPOS_VEICULO = ["PROPRIO", "ALUGADO", "EMPRESTADO", "DA CAMPANHA", "DE APOIADOR", "OUTRO"]
+TIPOS_CONTRATO = ["ALUGUEL DE IMOVEL", "ASSESSORIA", "COMITE", "FORNECEDOR / MATERIAL",
+                  "IMPRENSA / MARKETING", "LOCACAO DE VEICULO", "OUTRO", "PRESTACAO DE SERVICOS"]
+
+FORMAS_PAGAMENTO = ["BOLETO", "CARTAO", "DINHEIRO", "PIX", "TRANSFERENCIA"]
+TIPOS_DEMANDA = ["SAUDE", "EDUCACAO", "SEGURANCA", "SANEAMENTO", "HABITACAO",
+                 "EMPREGO", "MATERIAL DE CAMPANHA", "OUTRO"]
+PRIORIDADES = ["BAIXA", "MEDIA", "ALTA"]
+FILTROS_RESPONSAVEL = ["COORDENADORES", "FUNCIONARIO", "COMISSIONADO", "LIDERANCA"]
+TIPOS_DOACAO = ["PESSOA FISICA", "PARTIDO", "FEFC", "RECURSO PROPRIO", "OUTRO"]
+FORMAS_RECEBIMENTO = ["PIX", "TRANSFERENCIA BANCARIA", "DINHEIRO", "BOLETO", "CARTAO"]
+TIPOS_CARGO = ["CABO ELEITORAL", "COORDENADOR GERAL", "COORDENADOR LOCAL",
+               "COORDENADOR REGIONAL", "FISCAL DE SECAO", "LIDERANCA",
+               "MOTORISTA", "OUTRO", "VOLUNTARIO"]
+TIPOS_ESTRUTURA = ["COMITE", "EQUIPE", "NUCLEO", "REGIONAL"]
+TIPOS_AUTORIZACAO = ["ABASTECIMENTO", "ENTRADA EM EVENTO", "INSTALACAO DE PLACAS", "RETIRADA DE MATERIAL", "USO DE IMAGEM", "USO DE VEICULO", "OUTRO"]
+# Materiais de propaganda PERMITIDOS pela legislacao eleitoral (Lei 9.504/97).
+# Brindes (camiseta, bone, caneta, chaveiro, copo) sao VEDADOS e NAO entram aqui.
+CATALOGO_MATERIAIS = [
+    {"categoria": "ADESIVOS", "materiais": ["ADESIVO 5X5", "ADESIVO 10X10", "ADESIVO MICROPERFURADO"]},
+    {"categoria": "BANNERS", "materiais": ["BANNER 2M", "BANNER 4M", "WIND BANNER"]},
+    {"categoria": "BOLACHAS", "materiais": ["BOLACHA COM CANDIDATA", "BOLACHA COM DOBRADA"]},
+    {"categoria": "BANDEIRAS", "materiais": ["BANDEIRA DE MAO", "BANDEIRA DE MESA"]},
+    {"categoria": "CARTAZES", "materiais": ["CARTAZ A3", "CARTAZ A4"]},
+    {"categoria": "PLACAS", "materiais": ["PLACA 2M", "PLACA 4M", "CAVALETE"]},
+    {"categoria": "PRAGUINHAS", "materiais": ["PRAGUINHA 68MM", "PRAGUINHA 98MM"]},
+    {"categoria": "SANTINHOS", "materiais": ["SANTINHO"]},
+    {"categoria": "FAIXAS", "materiais": ["FAIXA"]},
+    {"categoria": "BONECOS", "materiais": ["BONECO INFLÁVEL"]},
+]
+VOLUMES = ["CAIXA", "PACOTE", "SACOLA"]
+
+
+
+
+
+
+
+@app.route("/pessoas")
+@login_obrigatorio
+def pessoas():
+    q = sane(request.args.get("q"))
+    tipo = norm_txt(request.args.get("tipo"))
+    where, params = [], []
+    if q:
+        where.append("(nome LIKE %s OR cpf LIKE %s OR municipio LIKE %s)")
+        like = "%" + q + "%"
+        params += [like, like, like]
+    if tipo and tipo in TIPOS:
+        where.append("tipo = %s")
+        params.append(tipo)
+    sql = "SELECT id, nome, cpf, tipo, funcao, municipio FROM pessoas"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY nome"
+    return render_template("pessoas.html", lista=listar(sql, params), tipos=TIPOS, q=q, tipo=tipo)
+
+CAMPOS_PESSOA = ["nome", "cpf", "rg", "tipo", "funcao", "tratamento", "nascimento",
+                 "telefone", "celular", "email", "estado_civil", "endereco",
+                 "numero", "complemento", "bairro", "municipio", "cep",
+                 "titulo_eleitor", "zona", "secao", "local_votacao", "observacoes"]
+
+@app.route("/pessoas/salvar", methods=["POST"])
+@login_obrigatorio
+def pessoa_salvar():
+    pid_txt = sane(request.form.get("id"))
+    try:
+        pid = int(pid_txt) if pid_txt else 0
+    except ValueError:
+        pid = 0
+    valores = {}
+    for c in CAMPOS_PESSOA:
+        v = sane(request.form.get(c))
+        if c == "cpf":
+            v = dig(v)
+        elif c == "email":
+            v = v.lower()
+        elif c in ("tipo", "funcao", "tratamento", "rg"):
+            v = norm_txt(v)
+        valores[c] = v
+    if not valores.get("nome"):
+        flash("Informe o Nome.", "erro")
+        return redirect(url_for("pessoas"))
+    cpf = valores.get("cpf") or ""
+    if cpf and len(cpf) != 11:
+        flash("CPF deve ter 11 digitos.", "erro")
+        return redirect(url_for("pessoas"))
+    if cpf:
+        dup = buscar("SELECT id FROM pessoas WHERE cpf=%s AND id<>%s", (cpf, pid))
+        if dup:
+            flash("CPF ja cadastrado em outro registro (id %s)." % dup.get("id"), "erro")
+            return redirect("/pessoas/%s?aba=cadastro" % dup.get("id"))
+    params = [valores[c] for c in CAMPOS_PESSOA]
+    if pid:
+        pares = ", ".join(c + "=%s" for c in CAMPOS_PESSOA)
+        alterar("UPDATE pessoas SET " + pares + " WHERE id=%s", params + [pid])
+        return redirect("/pessoas/%d?aba=cadastro&ok=1" % pid)
+    novo_id = inserir("INSERT INTO pessoas (" + ", ".join(CAMPOS_PESSOA) + ") VALUES (" +
+                      ", ".join(["%s"] * len(CAMPOS_PESSOA)) + ")", params)
+    if novo_id:
+        return redirect("/pessoas/%d?aba=cadastro&ok=1" % novo_id)
+    flash("Nao foi possivel salvar.", "erro")
+    return redirect(url_for("pessoas"))
+
+def montar_ficha(pid):
+    p = buscar("SELECT * FROM pessoas WHERE id=%s", (pid,))
+    if not p:
+        return None
+    p["veiculos"] = listar("SELECT * FROM veiculos WHERE pessoa_id=%s ORDER BY id DESC", (pid,))
+    p["contratos"] = listar("SELECT * FROM contratos WHERE pessoa_id=%s ORDER BY id DESC", (pid,))
+    p["demandas"] = listar("SELECT * FROM demandas WHERE pessoa_id=%s ORDER BY id DESC", (pid,))
+    p["doacoes"] = listar("SELECT * FROM doacoes WHERE pessoa_id=%s ORDER BY id DESC", (pid,))
+    p["cargos"] = listar("SELECT * FROM cargos WHERE pessoa_id=%s ORDER BY id DESC", (pid,))
+    p["autorizacoes"] = listar("SELECT * FROM autorizacoes WHERE pessoa_id=%s ORDER BY id DESC", (pid,))
+    kits = listar("SELECT * FROM kits WHERE pessoa_id=%s ORDER BY id DESC", (pid,))
+    for k in kits:
+        k["itens"] = listar("SELECT * FROM kit_itens WHERE kit_id=%s ORDER BY id", (k.get("id"),))
+    p["kits"] = kits
+    return p
+
+@app.route("/pessoas/novo")
+@login_obrigatorio
+def pessoa_novo():
+    return render_template("ficha_pessoa.html", p=None, tipos=TIPOS, tratamentos=TRATAMENTOS, funcoes=FUNCOES, tipos_contrato=TIPOS_CONTRATO, formas_pagamento=FORMAS_PAGAMENTO, tipos_demanda=TIPOS_DEMANDA,
+                           modelos_veiculos=MODELOS_VEICULOS, combustiveis=COMBUSTIVEIS,
+                           tipos_veiculo=TIPOS_VEICULO, aba="cadastro", prioridades=PRIORIDADES, filtros_responsavel=FILTROS_RESPONSAVEL, tipos_doacao=TIPOS_DOACAO, formas_recebimento=FORMAS_RECEBIMENTO, tipos_cargo=TIPOS_CARGO, tipos_estrutura=TIPOS_ESTRUTURA, tipos_autorizacao=TIPOS_AUTORIZACAO, catalogo_materiais=CATALOGO_MATERIAIS, volumes=VOLUMES)
+
+@app.route("/pessoas/<int:pid>")
+@login_obrigatorio
+def pessoa_ficha(pid):
+    p = montar_ficha(pid)
+    if p is None:
+        flash("Registro nao encontrado.", "erro")
+        return redirect(url_for("pessoas"))
+    aba = sane(request.args.get("aba")) or "cadastro"
+    return render_template("ficha_pessoa.html", p=p, tipos=TIPOS, tratamentos=TRATAMENTOS, funcoes=FUNCOES, tipos_contrato=TIPOS_CONTRATO, formas_pagamento=FORMAS_PAGAMENTO, tipos_demanda=TIPOS_DEMANDA,
+                           modelos_veiculos=MODELOS_VEICULOS, combustiveis=COMBUSTIVEIS,
+                           tipos_veiculo=TIPOS_VEICULO, aba=aba, prioridades=PRIORIDADES, filtros_responsavel=FILTROS_RESPONSAVEL, tipos_doacao=TIPOS_DOACAO, formas_recebimento=FORMAS_RECEBIMENTO, tipos_cargo=TIPOS_CARGO, tipos_estrutura=TIPOS_ESTRUTURA, tipos_autorizacao=TIPOS_AUTORIZACAO, catalogo_materiais=CATALOGO_MATERIAIS, volumes=VOLUMES)
+
+@app.route("/pessoas/<int:pid>/excluir", methods=["POST"])
+@login_obrigatorio
+def pessoa_excluir(pid):
+    for tab in ("veiculos", "contratos", "demandas", "doacoes", "cargos", "autorizacoes"):
+        alterar("DELETE FROM " + tab + " WHERE pessoa_id=%s", (pid,))
+    for k in listar("SELECT id FROM kits WHERE pessoa_id=%s", (pid,)):
+        alterar("DELETE FROM kit_itens WHERE kit_id=%s", (k.get("id"),))
+    alterar("DELETE FROM kits WHERE pessoa_id=%s", (pid,))
+    alterar("DELETE FROM pessoas WHERE id=%s", (pid,))
+    flash("Registro excluido.", "ok")
+    return redirect(url_for("pessoas"))
+
+@app.route("/api/pessoa_por_cpf/<cpf>")
+@login_obrigatorio
+def api_pessoa_por_cpf(cpf):
+    v = dig(cpf)
+    if len(v) != 11:
+        return jsonify({"existe": False})
+    lin = buscar("SELECT id, nome FROM pessoas WHERE cpf=%s", (v,))
+    if lin:
+        return jsonify({"existe": True, "pessoa": {"id": lin.get("id"), "nome": lin.get("nome")}})
+    return jsonify({"existe": False})
+
+def voltar(pid, aba):
+    return redirect("/pessoas/%d?aba=%s" % (pid, aba))
+
+@app.route("/api/pessoas_opcoes")
+@login_obrigatorio
+def api_pessoas_opcoes():
+    tipo = norm_txt(request.args.get("tipo"))
+    where, params = [], []
+    if tipo and tipo != "TODOS":
+        if tipo == "COORDENADORES":
+            where.append("(tipo = 'COORDENADOR' OR funcao LIKE %s)")
+            params.append("COORDENADOR%")
+        else:
+            where.append("tipo = %s")
+            params.append(tipo)
+    sql = "SELECT id, nome, tipo, funcao, municipio FROM pessoas"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY nome"
+    return jsonify(listar(sql, params))
+
+
+@app.template_filter("moeda")
+def moeda(v):
+    try:
+        n = float(v or 0)
+    except (TypeError, ValueError):
+        n = 0.0
+    s = "{:,.2f}".format(n)
+    return "R$ " + s.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+@app.route("/pessoas/<int:pid>/veiculos/salvar", methods=["POST"])
+@login_obrigatorio
+def veiculo_salvar(pid):
+    alterar("INSERT INTO veiculos (pessoa_id, placa, modelo, tipo, combustivel, tipo_veiculo, "
+            "adesivagem, motorista, municipio, status) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (pid, norm_txt(request.form.get("placa")), norm_txt(request.form.get("modelo")),
+             norm_txt(request.form.get("tipo")), norm_txt(request.form.get("combustivel")),
+             norm_txt(request.form.get("tipo_veiculo")), norm_txt(request.form.get("adesivagem")),
+             norm_txt(request.form.get("motorista")), norm_txt(request.form.get("municipio")),
+             norm_txt(request.form.get("status")) or "RODANDO"))
+    return voltar(pid, "veiculos")
+
+@app.route("/veiculos/<int:rid>/dados")
+@login_obrigatorio
+def veiculo_dados(rid):
+    lin = buscar("SELECT * FROM veiculos WHERE id=%s", (rid,))
+    if not lin:
+        return jsonify({"erro": "nao encontrado"}), 404
+    return jsonify(lin)
+
+@app.route("/veiculos/<int:rid>/atualizar", methods=["POST"])
+@login_obrigatorio
+def veiculo_atualizar(rid):
+    lin = buscar("SELECT pessoa_id FROM veiculos WHERE id=%s", (rid,))
+    if not lin:
+        return redirect(url_for("pessoas"))
+    alterar("UPDATE veiculos SET placa=%s, modelo=%s, tipo=%s, combustivel=%s, "
+            "tipo_veiculo=%s, adesivagem=%s, motorista=%s, municipio=%s, status=%s WHERE id=%s",
+            (norm_txt(request.form.get("placa")), norm_txt(request.form.get("modelo")),
+             norm_txt(request.form.get("tipo")), norm_txt(request.form.get("combustivel")),
+             norm_txt(request.form.get("tipo_veiculo")), norm_txt(request.form.get("adesivagem")),
+             norm_txt(request.form.get("motorista")), norm_txt(request.form.get("municipio")),
+             norm_txt(request.form.get("status")) or "RODANDO", rid))
+    return voltar(lin.get("pessoa_id"), "veiculos")
+
+@app.route("/veiculos/<int:rid>/excluir", methods=["POST"])
+@login_obrigatorio
+def veiculo_excluir(rid):
+    lin = buscar("SELECT pessoa_id FROM veiculos WHERE id=%s", (rid,))
+    if lin:
+        alterar("DELETE FROM veiculos WHERE id=%s", (rid,))
+        return voltar(lin.get("pessoa_id"), "veiculos")
+    return redirect(url_for("pessoas"))
+
+@app.route("/pessoas/<int:pid>/contratos/salvar", methods=["POST"])
+@login_obrigatorio
+def contrato_salvar(pid):
+    valor = parse_moeda(request.form.get("valor"))
+    alterar("INSERT INTO contratos (pessoa_id, descricao, valor, data_inicio, data_fim, status, "
+            "tipo, forma_pagamento, vencimento, responsavel) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (pid, norm_txt(request.form.get("descricao")), valor,
+             sane(request.form.get("data_inicio")), sane(request.form.get("data_fim")),
+             norm_txt(request.form.get("status")) or "ATIVO",
+             norm_txt(request.form.get("tipo")), norm_txt(request.form.get("forma_pagamento")),
+             sane(request.form.get("vencimento")), norm_txt(request.form.get("responsavel"))))
+    return voltar(pid, "contratos")
+
+@app.route("/contratos/<int:rid>/dados")
+@login_obrigatorio
+def contrato_dados(rid):
+    lin = buscar("SELECT * FROM contratos WHERE id=%s", (rid,))
+    if not lin:
+        return jsonify({"erro": "nao encontrado"}), 404
+    return jsonify(lin)
+
+@app.route("/contratos/<int:rid>/atualizar", methods=["POST"])
+@login_obrigatorio
+def contrato_atualizar(rid):
+    lin = buscar("SELECT pessoa_id FROM contratos WHERE id=%s", (rid,))
+    if not lin:
+        return redirect(url_for("pessoas"))
+    valor = parse_moeda(request.form.get("valor"))
+    alterar("UPDATE contratos SET descricao=%s, valor=%s, data_inicio=%s, data_fim=%s, status=%s, "
+            "tipo=%s, forma_pagamento=%s, vencimento=%s, responsavel=%s WHERE id=%s",
+            (norm_txt(request.form.get("descricao")), valor,
+             sane(request.form.get("data_inicio")), sane(request.form.get("data_fim")),
+             norm_txt(request.form.get("status")) or "ATIVO",
+             norm_txt(request.form.get("tipo")), norm_txt(request.form.get("forma_pagamento")),
+             sane(request.form.get("vencimento")), norm_txt(request.form.get("responsavel")), rid))
+    return voltar(lin.get("pessoa_id"), "contratos")
+
+@app.route("/contratos/<int:rid>/excluir", methods=["POST"])
+@login_obrigatorio
+def contrato_excluir(rid):
+    lin = buscar("SELECT pessoa_id FROM contratos WHERE id=%s", (rid,))
+    if lin:
+        alterar("DELETE FROM contratos WHERE id=%s", (rid,))
+        return voltar(lin.get("pessoa_id"), "contratos")
+    return redirect(url_for("pessoas"))
+
+@app.route("/pessoas/<int:pid>/demandas/salvar", methods=["POST"])
+@login_obrigatorio
+def demanda_salvar(pid):
+    alterar("INSERT INTO demandas (pessoa_id, tipo, descricao, responsavel, municipio, "
+            "prioridade, data, status) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+            (pid, norm_txt(request.form.get("tipo")), norm_txt(request.form.get("descricao")),
+             norm_txt(request.form.get("responsavel")), norm_txt(request.form.get("municipio")),
+             norm_txt(request.form.get("prioridade")) or "MEDIA",
+             sane(request.form.get("data")),
+             norm_txt(request.form.get("status")) or "PENDENTE"))
+    return voltar(pid, "demandas")
+
+@app.route("/demandas/<int:rid>/dados")
+@login_obrigatorio
+def demanda_dados(rid):
+    lin = buscar("SELECT * FROM demandas WHERE id=%s", (rid,))
+    if not lin:
+        return jsonify({"erro": "nao encontrado"}), 404
+    return jsonify(lin)
+
+@app.route("/demandas/<int:rid>/atualizar", methods=["POST"])
+@login_obrigatorio
+def demanda_atualizar(rid):
+    lin = buscar("SELECT pessoa_id FROM demandas WHERE id=%s", (rid,))
+    if not lin:
+        return redirect(url_for("pessoas"))
+    alterar("UPDATE demandas SET tipo=%s, descricao=%s, responsavel=%s, municipio=%s, "
+            "prioridade=%s, data=%s, status=%s WHERE id=%s",
+            (norm_txt(request.form.get("tipo")), norm_txt(request.form.get("descricao")),
+             norm_txt(request.form.get("responsavel")), norm_txt(request.form.get("municipio")),
+             norm_txt(request.form.get("prioridade")) or "MEDIA",
+             sane(request.form.get("data")),
+             norm_txt(request.form.get("status")) or "PENDENTE", rid))
+    return voltar(lin.get("pessoa_id"), "demandas")
+
+@app.route("/demandas/<int:rid>/excluir", methods=["POST"])
+@login_obrigatorio
+def demanda_excluir(rid):
+    lin = buscar("SELECT pessoa_id FROM demandas WHERE id=%s", (rid,))
+    if lin:
+        alterar("DELETE FROM demandas WHERE id=%s", (rid,))
+        return voltar(lin.get("pessoa_id"), "demandas")
+    return redirect(url_for("pessoas"))
+
+@app.route("/pessoas/<int:pid>/doacoes/salvar", methods=["POST"])
+@login_obrigatorio
+def doacao_salvar(pid):
+    valor = parse_moeda(request.form.get("valor"))
+    alterar("INSERT INTO doacoes (pessoa_id, tipo, descricao, valor, forma_recebimento, "
+            "recibo, status, data) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+            (pid, norm_txt(request.form.get("tipo")), norm_txt(request.form.get("descricao")),
+             valor, norm_txt(request.form.get("forma_recebimento")),
+             norm_txt(request.form.get("recibo")),
+             norm_txt(request.form.get("status")) or "PENDENTE",
+             sane(request.form.get("data"))))
+    return voltar(pid, "doacoes")
+
+@app.route("/doacoes/<int:rid>/dados")
+@login_obrigatorio
+def doacao_dados(rid):
+    lin = buscar("SELECT * FROM doacoes WHERE id=%s", (rid,))
+    if not lin:
+        return jsonify({"erro": "nao encontrado"}), 404
+    return jsonify(lin)
+
+@app.route("/doacoes/<int:rid>/atualizar", methods=["POST"])
+@login_obrigatorio
+def doacao_atualizar(rid):
+    lin = buscar("SELECT pessoa_id FROM doacoes WHERE id=%s", (rid,))
+    if not lin:
+        return redirect(url_for("pessoas"))
+    valor = parse_moeda(request.form.get("valor"))
+    alterar("UPDATE doacoes SET tipo=%s, descricao=%s, valor=%s, forma_recebimento=%s, "
+            "recibo=%s, status=%s, data=%s WHERE id=%s",
+            (norm_txt(request.form.get("tipo")), norm_txt(request.form.get("descricao")),
+             valor, norm_txt(request.form.get("forma_recebimento")),
+             norm_txt(request.form.get("recibo")),
+             norm_txt(request.form.get("status")) or "PENDENTE",
+             sane(request.form.get("data")), rid))
+    return voltar(lin.get("pessoa_id"), "doacoes")
+
+@app.route("/doacoes/<int:rid>/excluir", methods=["POST"])
+@login_obrigatorio
+def doacao_excluir(rid):
+    lin = buscar("SELECT pessoa_id FROM doacoes WHERE id=%s", (rid,))
+    if lin:
+        alterar("DELETE FROM doacoes WHERE id=%s", (rid,))
+        return voltar(lin.get("pessoa_id"), "doacoes")
+    return redirect(url_for("pessoas"))
+
+@app.route("/pessoas/<int:pid>/cargos/salvar", methods=["POST"])
+@login_obrigatorio
+def cargo_salvar(pid):
+    alterar("INSERT INTO cargos (pessoa_id, cargo, tipo_estrutura, localidade, status) "
+            "VALUES (%s,%s,%s,%s,%s)",
+            (pid, norm_txt(request.form.get("cargo")),
+             norm_txt(request.form.get("tipo_estrutura")),
+             norm_txt(request.form.get("localidade")),
+             norm_txt(request.form.get("status")) or "ATIVO"))
+    return voltar(pid, "cargos")
+
+@app.route("/cargos/<int:rid>/dados")
+@login_obrigatorio
+def cargo_dados(rid):
+    lin = buscar("SELECT * FROM cargos WHERE id=%s", (rid,))
+    if not lin:
+        return jsonify({"erro": "nao encontrado"}), 404
+    return jsonify(lin)
+
+@app.route("/cargos/<int:rid>/atualizar", methods=["POST"])
+@login_obrigatorio
+def cargo_atualizar(rid):
+    lin = buscar("SELECT pessoa_id FROM cargos WHERE id=%s", (rid,))
+    if not lin:
+        return redirect(url_for("pessoas"))
+    alterar("UPDATE cargos SET cargo=%s, tipo_estrutura=%s, localidade=%s, status=%s WHERE id=%s",
+            (norm_txt(request.form.get("cargo")),
+             norm_txt(request.form.get("tipo_estrutura")),
+             norm_txt(request.form.get("localidade")),
+             norm_txt(request.form.get("status")) or "ATIVO", rid))
+    return voltar(lin.get("pessoa_id"), "cargos")
+
+@app.route("/cargos/<int:rid>/excluir", methods=["POST"])
+@login_obrigatorio
+def cargo_excluir(rid):
+    lin = buscar("SELECT pessoa_id FROM cargos WHERE id=%s", (rid,))
+    if lin:
+        alterar("DELETE FROM cargos WHERE id=%s", (rid,))
+        return voltar(lin.get("pessoa_id"), "cargos")
+    return redirect(url_for("pessoas"))
+
+@app.route("/pessoas/<int:pid>/autorizacoes/salvar", methods=["POST"])
+@login_obrigatorio
+def autorizacao_salvar(pid):
+    valor = parse_moeda(request.form.get("valor"))
+    alterar("INSERT INTO autorizacoes (pessoa_id, tipo, descricao, valor, responsavel, data, status) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (pid, norm_txt(request.form.get("tipo")), norm_txt(request.form.get("descricao")),
+             valor, norm_txt(request.form.get("responsavel")),
+             sane(request.form.get("data")),
+             norm_txt(request.form.get("status")) or "PENDENTE"))
+    return voltar(pid, "autorizacoes")
+
+@app.route("/autorizacoes/<int:rid>/dados")
+@login_obrigatorio
+def autorizacao_dados(rid):
+    lin = buscar("SELECT * FROM autorizacoes WHERE id=%s", (rid,))
+    if not lin:
+        return jsonify({"erro": "nao encontrado"}), 404
+    return jsonify(lin)
+
+@app.route("/autorizacoes/<int:rid>/atualizar", methods=["POST"])
+@login_obrigatorio
+def autorizacao_atualizar(rid):
+    lin = buscar("SELECT pessoa_id FROM autorizacoes WHERE id=%s", (rid,))
+    if not lin:
+        return redirect(url_for("pessoas"))
+    valor = parse_moeda(request.form.get("valor"))
+    alterar("UPDATE autorizacoes SET tipo=%s, descricao=%s, valor=%s, responsavel=%s, "
+            "data=%s, status=%s WHERE id=%s",
+            (norm_txt(request.form.get("tipo")), norm_txt(request.form.get("descricao")),
+             valor, norm_txt(request.form.get("responsavel")),
+             sane(request.form.get("data")),
+             norm_txt(request.form.get("status")) or "PENDENTE", rid))
+    return voltar(lin.get("pessoa_id"), "autorizacoes")
+
+@app.route("/autorizacoes/<int:rid>/excluir", methods=["POST"])
+@login_obrigatorio
+def autorizacao_excluir(rid):
+    lin = buscar("SELECT pessoa_id FROM autorizacoes WHERE id=%s", (rid,))
+    if lin:
+        alterar("DELETE FROM autorizacoes WHERE id=%s", (rid,))
+        return voltar(lin.get("pessoa_id"), "autorizacoes")
+    return redirect(url_for("pessoas"))
+
+MATERIAIS = ["Santinho", "Banner", "Camiseta", "Bone", "Adesivo",
+             "Caneta", "Bandeira", "Cartaz", "Flyer", "Copo"]
+
+@app.route("/pessoas/<int:pid>/kits/salvar_completo", methods=["POST"])
+@login_obrigatorio
+def kit_salvar_completo(pid):
+    nome = norm_txt(request.form.get("nome")) or "KIT"
+    envio = norm_txt(request.form.get("envio")) or "RETIRADA"
+    status = norm_txt(request.form.get("status")) or "SOLICITADO"
+    kid = inserir("INSERT INTO kits (pessoa_id, nome, envio, status) VALUES (%s,%s,%s,%s)",
+                  (pid, nome, envio, status))
+    if not kid:
+        flash("Nao foi possivel criar o kit.", "erro")
+        return voltar(pid, "kit")
+    for cat in CATALOGO_MATERIAIS:
+        for m in cat["materiais"]:
+            chave = m.replace(" ", "_").replace("Á", "A").replace("Ã", "A")
+            if request.form.get("sel_" + chave) == "1":
+                qtd = request.form.get("qtd_" + chave) or "0"
+                try:
+                    qtd = int(qtd)
+                except Exception:
+                    qtd = 0
+                if qtd > 0:
+                    vol = norm_txt(request.form.get("vol_" + chave))
+                    inserir("INSERT INTO kit_itens (kit_id, material, quantidade, volume) "
+                            "VALUES (%s,%s,%s,%s)", (kid, m, qtd, vol))
+    return voltar(pid, "kit")
+
+@app.route("/kits/<int:kid>/excluir", methods=["POST"])
+@login_obrigatorio
+def kit_excluir(kid):
+    lin = buscar("SELECT pessoa_id FROM kits WHERE id=%s", (kid,))
+    alterar("DELETE FROM kit_itens WHERE kit_id=%s", (kid,))
+    alterar("DELETE FROM kits WHERE id=%s", (kid,))
+    if lin:
+        return voltar(lin.get("pessoa_id"), "kit")
+    return redirect(url_for("pessoas"))
+
+@app.route("/kit_itens/<int:iid>/excluir", methods=["POST"])
+@login_obrigatorio
+def kit_item_excluir(iid):
+    lin = buscar("SELECT kit_id FROM kit_itens WHERE id=%s", (iid,))
+    if lin:
+        alterar("DELETE FROM kit_itens WHERE id=%s", (iid,))
+        k = buscar("SELECT pessoa_id FROM kits WHERE id=%s", (lin.get("kit_id"),))
+        if k:
+            return voltar(k.get("pessoa_id"), "kit")
+    return redirect(url_for("pessoas"))
+
+init_db()
+
+if __name__ == "__main__":
+    init_db()
+    app.run(host="127.0.0.1", port=5000, debug=True)

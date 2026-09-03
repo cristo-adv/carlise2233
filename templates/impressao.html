@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<div style="padding:10px 0">
+<h1>Impress&#227;o</h1>
+<p style="color:#666">Dados do candidato v&#234;m do m&#243;dulo Configura&#231;&#227;o: <b>{{ cand.nome_urna if cand else 'CARLISE 2233' }}</b> ({{ cand.numero_candidatura if cand else '2233' }}).</p>
+<div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:16px">
+  <div style="flex:1;min-width:260px;border:1px solid #ddd;border-radius:12px;padding:18px">
+    <div style="font-size:22px">&#9993;</div>
+    <h3 style="margin:8px 0">Correspond&#234;ncia</h3>
+    <p style="color:#555;font-size:14px">Etiquetas de carta por pessoa, com <b>anivers&#225;rio</b>, <b>demandas</b> e <b>categoria</b> — filtros por aniversariantes do m&#234;s ou por demanda.</p>
+    <a href="/impressao/correspondencia" style="background:#0050FF;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block;margin-top:8px">Abrir Correspond&#234;ncia</a>
+  </div>
+  <div style="flex:1;min-width:260px;border:1px solid #ddd;border-radius:12px;padding:18px">
+    <div style="font-size:22px">&#128230;</div>
+    <h3 style="margin:8px 0">Kit / Envio de Material</h3>
+    <p style="color:#555;font-size:14px">Etiqueta de envio com <b>REMETENTE, DESTINAT&#193;RIO, C&#211;DIGO DE BARRAS</b> e <b>DECLARA&#199;&#195;O DE TRANSPORTE</b> (Correios ou Transportadora).</p>
+    <a href="/impressao/kit" style="background:#0050FF;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block;margin-top:8px">Abrir Kit / Envio</a>
+  </div>
+</div>
+</div>
+{% endblock %}

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<div style="padding:10px 0">
+<h1>Configura&#231;&#227;o</h1>
+<p style="color:#666">Cadastro do candidato &mdash; dados exibidos no login, dashboard, etiquetas e no sistema.</p>
+{% if cand %}
+<div style="border:1px solid #ddd;border-radius:10px;padding:16px;margin:14px 0">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+    <strong style="font-size:18px">{{ cand.nome_urna or cand.nome_completo }}</strong>
+    <span style="background:#0050FF;color:#fff;border-radius:20px;padding:4px 14px">{{ cand.cargo or 'Cargo' }}</span>
+  </div>
+  <table style="width:100%;border-collapse:collapse;margin-top:12px">
+    {% set linhas = [('Nome completo', cand.nome_completo), ('Nome de urna', cand.nome_urna), ('CNPJ', cand.cnpj, 'cnpj'), ('CPF', cand.cpf, 'cpf'), ('Cargo', cand.cargo), ('Nº candidatura', cand.numero_candidatura), ('Partido', cand.partido), ('Coligação', cand.coligacao), ('Município / UF', cand.municipio), ('Nascimento', cand.data_nascimento), ('E-mail', cand.email), ('Telefone', cand.telefone, 'tel'), ('Site', cand.site)] %}
+    {% for linha in linhas %}
+    <tr>
+      <th style="text-align:left;padding:6px 8px;color:#555;width:190px">{{ linha[0] }}</th>
+      <td style="padding:6px 8px">{% if linha|length > 2 and linha[2] %}<span data-format="{{ linha[2] }}">{{ linha[1] or '' }}</span>{% else %}{{ linha[1] or '-' }}{% endif %}</td>
+    </tr>
+    {% endfor %}
+    {% if cand.biografia %}
+    <tr><th style="text-align:left;padding:6px 8px;color:#555;width:190px">Biografia</th><td style="padding:6px 8px">{{ cand.biografia }}</td></tr>
+    {% endif %}
+    <tr><th style="text-align:left;padding:6px 8px;color:#555;width:190px">Endere&#231;o do comit&#234;</th><td style="padding:6px 8px">
+      {% if cand.comite_endereco or cand.comite_numero or cand.comite_bairro or cand.comite_cidade or cand.comite_cep %}
+        {{ cand.comite_endereco or '' }}{% if cand.comite_numero %}, {{ cand.comite_numero }}{% endif %}{% if cand.comite_bairro %} &middot; {{ cand.comite_bairro }}{% endif %}{% if cand.comite_cidade %} &middot; {{ cand.comite_cidade }}{% endif %}{% if cand.comite_uf %} / {{ cand.comite_uf }}{% endif %}{% if cand.comite_cep %} &middot; CEP <span data-format="cep">{{ cand.comite_cep }}</span>{% endif %}
+      {% else %} - {% endif %}
+    </td></tr>
+    <tr><th style="text-align:left;padding:6px 8px;color:#555;width:190px">Telefone do comit&#234;</th><td style="padding:6px 8px">{% if cand.comite_telefone %}<span data-format="tel">{{ cand.comite_telefone }}</span>{% else %}-{% endif %}</td></tr>
+  </table>
+  <div style="margin-top:14px;display:flex;gap:8px">
+    <a href="/configuracao/{{ cand.id }}/editar" style="background:#0050FF;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none">Editar candidato</a>
+    <form method="post" action="/configuracao/{{ cand.id }}/excluir" onsubmit="return confirm('Excluir este candidato?');" style="display:inline">
+      <button type="submit" style="background:#eee;padding:8px 16px;border-radius:8px;border:1px solid #ccc;cursor:pointer">Excluir</button>
+    </form>
+  </div>
+</div>
+{% else %}
+<div style="border:1px solid #ddd;border-radius:10px;padding:16px;margin:14px 0">
+  <p>Nenhum candidato cadastrado ainda.</p>
+  <a href="/configuracao/novo" style="background:#0050FF;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none">+ Cadastrar candidato</a>
+</div>
+{% endif %}
+<div style="border:1px solid #ddd;border-radius:10px;padding:16px;margin:14px 0">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <strong>Trocar de candidato</strong>
+    <a href="/configuracao/novo" style="background:#0050FF;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none">+ Novo candidato</a>
+  </div>
+  <p style="color:#666;margin-top:8px">Cadastre um novo candidato para usar o sistema com outros dados (nome, CNPJ, cargo, n&#186;). Ele vira o candidato ativo na hora.</p>
+</div>
+</div>
+<script>
+function soNum2(v){ return (v||'').replace(/\D/g,''); }
+function fmtCnpj(v){ var d=soNum2(v); if(d.length!==14) return v; return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5'); }
+function fmtCpf(v){ var d=soNum2(v); if(d.length!==11) return v; return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4'); }
+function fmtCep(v){ var d=soNum2(v); if(d.length!==8) return v; return d.replace(/^(\d{5})(\d{3})$/, '$1-$2'); }
+function fmtTel(v){ var d=soNum2(v); if(d.length===10) return d.replace(/^(\d{2})(\d{4})(\d{4})$/, '($1) $2-$3'); if(d.length===11) return d.replace(/^(\d{2})(\d{5})(\d{4})$/, '($1) $2-$3'); return v; }
+document.addEventListener('DOMContentLoaded', function(){
+  var els=document.querySelectorAll('[data-format]');
+  for(var i=0;i<els.length;i++){ var el=els[i], t=el.getAttribute('data-format'), v=el.textContent||''; var out=v;
+    if(t==='cnpj') out=fmtCnpj(v); else if(t==='cpf') out=fmtCpf(v); else if(t==='cep') out=fmtCep(v); else if(t==='tel') out=fmtTel(v);
+    el.textContent = out || '-';
+  }
+});
+</script>
+{% endblock %}

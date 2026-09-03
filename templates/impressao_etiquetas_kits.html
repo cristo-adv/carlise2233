@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Etiquetas de envio de material</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; margin: 0; padding: 12px; background: #fafafa; }
+  .no-print { margin-bottom: 12px; }
+  .btn { padding: 8px 16px; border-radius: 6px; border: 1px solid #999; background: #0050FF; color: #fff; text-decoration: none; cursor: pointer; font-size: 14px; display: inline-block; }
+  .btn-cinza { background: #eee; color: #333; border-color: #ccc; margin-right: 6px; }
+  .info { margin-left: 12px; font-size: 13px; color: #555; }
+  .grade { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6mm; }
+  body.fmt-2 .grade { grid-template-columns: repeat(2, 1fr); }
+  body.fmt-1 .grade { grid-template-columns: repeat(1, 1fr); }
+  .etiqueta { border: 1px solid #999; border-radius: 3px; padding: 3mm 4mm; min-height: 54mm; break-inside: avoid; page-break-inside: avoid; background: #fff; font-size: 11px; }
+  .cab { font-size: 9px; letter-spacing: 1px; color: #333; border-bottom: 1px solid #ccc; padding-bottom: 2px; margin-bottom: 4px; text-transform: uppercase; }
+  .bloco { border: 1px solid #ccc; border-radius: 3px; padding: 4px; margin: 4px 0; }
+  .rot { font-size: 8px; color: #888; text-transform: uppercase; letter-spacing: .5px; }
+  .rem { font-weight: bold; color: #0050FF; font-size: 12px; }
+  .dest b { font-size: 12px; }
+  .codigo { text-align: center; margin: 4px 0; }
+  .codigo .num { font-family: monospace; font-size: 11px; margin-top: 2px; letter-spacing: 1px; }
+  .dec { border: 1px solid #999; border-radius: 3px; padding: 4px; margin-top: 4px; }
+  .dec .rot { color: #c00; font-weight: bold; }
+  .linhas { font-size: 10px; }
+  .cnpj-label { font-size: 9px; color: #333; margin-top: 2px; }
+  .ass { margin-top: 5px; font-size: 9px; color: #444; }
+  .vazio { color: #999; font-style: italic; }
+  @media print {
+    .no-print { display: none !important; }
+    body { padding: 0; background: #fff; }
+    @page { margin: 8mm; }
+    .etiqueta { border-color: #000; }
+  }
+</style>
+</head>
+<body class="fmt-3">
+{% macro fmt_cnpj(v) %}{% if v and (v|string)|length == 14 %}{{ v[0:2] }}.{{ v[2:5] }}.{{ v[5:8] }}/{{ v[8:12] }}-{{ v[12:14] }}{% else %}{{ v or '' }}{% endif %}{% endmacro %}
+  <div class="no-print">
+    <a class="btn btn-cinza" href="javascript:history.back()">&larr; Voltar</a>
+    <button class="btn" onclick="window.print()">Imprimir etiquetas</button>
+    <label class="info">Formato:
+      <select onchange="document.body.className=this.value">
+        <option value="fmt-3" selected>3 por linha</option>
+        <option value="fmt-2">2 por linha</option>
+        <option value="fmt-1">1 por linha</option>
+      </select>
+    </label>
+    <span class="info">Total: {{ etiquetas|length }} etiqueta(s)</span>
+  </div>
+  <div class="grade">
+    {% for e in etiquetas %}
+    <div class="etiqueta">
+      <div class="cab">Comit&#234; de Campanha &mdash; Envio de Material</div>
+
+      <div class="bloco">
+        <div class="rot">Remetente</div>
+        <div class="rem">{{ cand.nome_urna if cand else 'CARLISE 2233' }} &middot; {{ cand.numero_candidatura if cand else '2233' }}</div>
+        <div>{{ cand.cargo if cand else 'Cargo' }}{% if cand and cand.municipio %} &middot; {{ cand.municipio }}{% endif %}{% if cand and cand.uf %} / {{ cand.uf }}{% endif %}</div>
+        {% if cand and cand.cnpj %}<div class="cnpj-label"><b>CNPJ da campanha:</b> {{ fmt_cnpj(cand.cnpj) }}</div>{% endif %}
+        {% if cand and cand.comite_endereco %}<div>{{ cand.comite_endereco }}{% if cand.comite_numero %}, {{ cand.comite_numero }}{% endif %}{% if cand.comite_bairro %} &middot; {{ cand.comite_bairro }}{% endif %}{% if cand.comite_cidade %} &middot; {{ cand.comite_cidade }}{% endif %}{% if cand.comite_uf %} / {{ cand.comite_uf }}{% endif %}{% if cand.comite_cep %} &middot; CEP {{ cand.comite_cep }}{% endif %}</div>{% endif %}
+        {% if cand and cand.comite_telefone %}<div>Tel: {{ cand.comite_telefone }}</div>{% endif %}
+      </div>
+
+      <div class="bloco">
+        <div class="rot">Destinat&#225;rio</div>
+        <div class="dest"><b>{{ e.nome or '-' }}</b></div>
+        <div>{{ e.endereco }}{% if e.numero %}, {{ e.numero }}{% endif %}{% if e.bairro %} &middot; {{ e.bairro }}{% endif %}</div>
+        <div>{% if e.cidade_uf %}{{ e.cidade_uf }}{% endif %}{% if e.cidade_uf and e.cep %} &middot; {% endif %}{% if e.cep %}CEP {{ e.cep }}{% endif %}</div>
+        {% if e.zona or e.secao or e.telefone %}<div>{% if e.zona %}Zona {{ e.zona }}{% endif %}{% if e.secao %} &middot; Se&#231;&#227;o {{ e.secao }}{% endif %}{% if e.telefone %} &middot; {{ e.telefone }}{% endif %}</div>{% endif %}
+      </div>
+
+      <div class="codigo">
+        {{ e.barra|safe }}
+        <div class="num">N&#186;: {{ e.codigo }}</div>
+      </div>
+
+      <div class="dec">
+        <div class="rot">Declara&#231;&#227;o de Transporte{% if e.modelo == 'correios' %} &mdash; Correios{% else %} &mdash; Transportadora{% endif %}</div>
+        {% if e.modelo == 'correios' %}
+        <div class="linhas">Conte&#250;do: <b>{{ e.conteudo }}</b> &middot; Qtd.: <b>{{ e.quantidade }}</b><br>
+        Valor declarado: {{ e.valor or '-' }} &middot; Peso: {{ e.peso or '-' }}<br>
+        N&#186; do objeto: {{ e.codigo }} &middot; Data: {{ data_hoje }}</div>
+        {% else %}
+        <div class="linhas">Conte&#250;do: <b>{{ e.conteudo }}</b><br>
+        Volumes: <b>{{ e.quantidade }}</b> &middot; Peso total: {{ e.peso or '-' }} &middot; Valor: {{ e.valor or '-' }}<br>
+        Data: {{ data_hoje }}</div>
+        {% endif %}
+        {% if cand and cand.cnpj %}<div class="cnpj-label">CNPJ da campanha (remetente): {{ fmt_cnpj(cand.cnpj) }}</div>{% endif %}
+        <div class="ass">Expedidor: ______________________ &nbsp;&nbsp; Recebedor: ______________________</div>
+      </div>
+    </div>
+    {% else %}
+    <div class="vazio">Nenhuma etiqueta gerada.</div>
+    {% endfor %}
+  </div>
+</body>
+</html>

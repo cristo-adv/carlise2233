@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><title>Recibo eleitoral</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; color: #000; }
+  .no-print { margin-bottom: 10px; }
+  .cab { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 14px; }
+  .cab .l1 { font-size: 18px; font-weight: bold; }
+  .cab .l2 { font-size: 13px; }
+  h2 { text-align: center; font-size: 18px; margin: 8px 0; }
+  .recibo { border: 2px solid #000; padding: 12px; font-size: 13px; }
+  .recibo p { margin: 6px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  th, td { border: 1px solid #333; padding: 6px; text-align: left; }
+  th { background: #eee; }
+  .obs { font-size: 11px; color: #444; margin-top: 10px; }
+  .assin { display: flex; justify-content: space-between; margin-top: 45px; font-size: 12px; }
+  @media print { .no-print { display: none; } body { margin: 10mm; } }
+</style></head>
+<body>
+<div class="no-print"><button onclick="window.print()" style="padding:8px 16px">Imprimir</button> <a href="javascript:history.back()" style="margin-left:10px">Voltar</a></div>
+<div class="cab">
+  <div class="l1">{{ cand.nome_urna if cand else 'CARLISE 2233' }} &middot; {{ cand.numero_candidatura if cand else '2233' }}</div>
+  <div class="l2">{{ cand.cargo if cand else '' }}{% if cand and cand.municipio %} &middot; {{ cand.municipio }}{% endif %}{% if cand and cand.uf %} / {{ cand.uf }}{% endif %}{% if cand and cand.comite_endereco %} &middot; Comitê: {{ cand.comite_endereco }}{% endif %}</div>
+</div>
+<h2>Recibo de Entrega de Material de Campanha</h2>
+<div class="recibo">
+  <p><b>Recibo Nº:</b> REC-{{ p.id }}-{{ data_hoje.replace('/','') }} &nbsp;&nbsp; <b>Data:</b> {{ data_hoje }}</p>
+  <p><b>Eleitor(a):</b> {{ p.nome or '' }}{% if p.cpf %} &middot; CPF: {{ p.cpf }}{% endif %}</p>
+  <p>{% if p.endereco %}<b>Endereço:</b> {{ p.endereco }}{% if p.numero %}, {{ p.numero }}{% endif %}{% if p.bairro %} &middot; {{ p.bairro }}{% endif %}{% endif %}{% if p.municipio %} &middot; {{ p.municipio }}{% endif %}{% if p.uf %} / {{ p.uf }}{% endif %}{% if p.cep %} &middot; CEP {{ p.cep }}{% endif %}</p>
+  {% if p.zona or p.secao %}<p>{% if p.zona %}<b>Zona:</b> {{ p.zona }}{% endif %}{% if p.secao %} &middot; <b>Seção:</b> {{ p.secao }}{% endif %}</p>{% endif %}
+  <p>Recebi do Comitê de Campanha de <b>{{ cand.nome_urna if cand else 'CARLISE 2233' }}</b> os seguintes materiais de propaganda eleitoral:</p>
+  {% if materiais %}
+  <table>
+    <tr><th>Material</th><th>Quantidade</th><th>Kit / Remessa</th></tr>
+    {% for m in materiais %}
+    <tr><td>{{ m.material or '' }}</td><td>{{ m.quantidade or '' }}</td><td>{{ m.kit or '' }}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <table>
+    <tr><th style="width:60%">Material</th><th>Quantidade</th></tr>
+    <tr><td>&nbsp;</td><td>&nbsp;</td></tr>
+    <tr><td>&nbsp;</td><td>&nbsp;</td></tr>
+    <tr><td>&nbsp;</td><td>&nbsp;</td></tr>
+  </table>
+  {% endif %}
+  <p class="obs"><b>Observação:</b> entrega de material de propaganda eleitoral permitido pela legislação eleitoral vigente (Lei nº 9.504/1997). É vedada a entrega de brindes (camisetas, bonés, canecas, chaveiros etc.). Este recibo deve ser guardado junto à prestação de contas.</p>
+</div>
+<div class="assin">
+  <div>______________________________<br>Recebedor(a) &mdash; {{ p.nome or '' }}</div>
+  <div>______________________________<br>Entregador(a) / Comitê</div>
+</div>
+</body></html>

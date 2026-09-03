@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CARLISE 2233 - Sistema de Gestao Eleitoral</title>
+<link rel="stylesheet" href="/static/estilo.css">
+</head>
+<body>
+{% if session.get('user') %}
+<header class="topo">
+  <div class="logo"><b>CARLISE</b> <span>2233</span></div>
+  <nav class="menu">
+    <a href="/" class="{{ 'ativo' if request.path == '/' else '' }}">Dashboard</a>
+    <a href="/pessoas" class="{{ 'ativo' if request.path.startswith('/pessoas') else '' }}">Pessoas</a>
+  </nav>
+  <a class="sair" href="/sair">Sair ({{ session.get('user') }})</a>
+</header>
+{% endif %}
+<div class="container">
+{% with msgs = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in msgs %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
+{% endwith %}
+{% block conteudo %}{% endblock %}
+</div>
+</body>
+</html>

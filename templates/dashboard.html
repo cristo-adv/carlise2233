@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h1>Dashboard</h1>
+<div class="sub">Visao geral do sistema CARLISE 2233</div>
+<div class="kpis">
+  <div class="kpi"><div class="n">{{ dados.pessoas }}</div><div class="r">Pessoas</div></div>
+  <div class="kpi"><div class="n">{{ dados.veiculos }}</div><div class="r">Veiculos</div></div>
+  <div class="kpi"><div class="n">{{ dados.contratos }}</div><div class="r">Contratos</div></div>
+  <div class="kpi"><div class="n">{{ dados.demandas }}</div><div class="r">Demandas</div></div>
+  <div class="kpi"><div class="n">{{ dados.doacoes }}</div><div class="r">Doacoes</div></div>
+  <div class="kpi"><div class="n">{{ dados.cargos }}</div><div class="r">Cargos</div></div>
+  <div class="kpi"><div class="n">{{ dados.autorizacoes }}</div><div class="r">Autorizacoes</div></div>
+  <div class="kpi"><div class="n">{{ dados.kits }}</div><div class="r">Kits</div></div>
+</div>
+<div class="card" style="margin-top:14px">
+  <a class="btn btn-p" href="/pessoas/novo">+ Novo Cadastro</a>
+  <a class="btn btn-s" href="/pessoas">Ver Pessoas</a>
+</div>
+{% endblock %}

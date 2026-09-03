@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Etiquetas de correspondencia</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; margin: 0; padding: 12px; background: #fafafa; }
+  .no-print { margin-bottom: 12px; }
+  .btn { padding: 8px 16px; border-radius: 6px; border: 1px solid #999; background: #0050FF; color: #fff; text-decoration: none; cursor: pointer; font-size: 14px; display: inline-block; }
+  .btn-cinza { background: #eee; color: #333; border-color: #ccc; margin-right: 6px; }
+  .info { margin-left: 12px; font-size: 13px; color: #555; }
+  .grade { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6mm; }
+  body.fmt-2 .grade { grid-template-columns: repeat(2, 1fr); }
+  body.fmt-1 .grade { grid-template-columns: repeat(1, 1fr); }
+  .etiqueta { border: 1px solid #999; border-radius: 3px; padding: 3mm 4mm; min-height: 44mm; break-inside: avoid; page-break-inside: avoid; background: #fff; }
+  .cab { font-size: 9px; letter-spacing: 1px; color: #333; border-bottom: 1px solid #ccc; padding-bottom: 2px; margin-bottom: 4px; text-transform: uppercase; }
+  .cand { font-size: 13px; font-weight: bold; color: #0050FF; margin-bottom: 6px; }
+  .dest { font-size: 12px; margin: 2px 0; }
+  .dest b { font-size: 13px; }
+  .end, .cidade, .extra, .linha-corpo { font-size: 11px; color: #333; margin: 2px 0; }
+  .linha-corpo { border-top: 1px dashed #ddd; padding-top: 4px; margin-top: 4px; }
+  .rodape { margin-top: 6px; border-top: 1px dashed #ccc; padding-top: 3px; font-size: 9px; color: #666; }
+  .vazio { color: #999; font-style: italic; }
+  @media print {
+    .no-print { display: none !important; }
+    body { padding: 0; background: #fff; }
+    @page { margin: 8mm; }
+    .etiqueta { border-color: #000; }
+  }
+</style>
+</head>
+<body class="fmt-3">
+  <div class="no-print">
+    <a class="btn btn-cinza" href="/impressao/correspondencia">&larr; Voltar</a>
+    <button class="btn" onclick="window.print()">Imprimir etiquetas</button>
+    <label class="info">Formato:
+      <select onchange="document.body.className=this.value">
+        <option value="fmt-3" selected>3 por linha</option>
+        <option value="fmt-2">2 por linha</option>
+        <option value="fmt-1">1 por linha</option>
+      </select>
+    </label>
+    <span class="info">Total: {{ etiquetas|length }} etiqueta(s)</span>
+  </div>
+  <div class="grade">
+    {% for e in etiquetas %}
+    <div class="etiqueta">
+      <div class="cab">Correspond&#234;ncia &mdash; Comit&#234; de Campanha</div>
+      <div class="cand">{{ cand.nome_urna if cand else 'CARLISE 2233' }} &middot; {{ cand.numero_candidatura if cand else '2233' }}</div>
+      <div class="dest">Para: <b>{{ e.nome or '-' }}</b></div>
+      <div class="end">{{ e.endereco }}{% if e.numero %}, {{ e.numero }}{% endif %}{% if e.bairro %} &middot; {{ e.bairro }}{% endif %}</div>
+      <div class="cidade">{% if e.cidade_uf %}{{ e.cidade_uf }}{% endif %}{% if e.cidade_uf and e.cep %} &middot; {% endif %}{% if e.cep %}CEP {{ e.cep }}{% endif %}</div>
+      {% if e.zona or e.secao or e.telefone %}<div class="extra">{% if e.zona %}Zona {{ e.zona }}{% endif %}{% if e.secao %} &middot; Se&#231;&#227;o {{ e.secao }}{% endif %}{% if e.telefone %} &middot; {{ e.telefone }}{% endif %}</div>{% endif %}
+      <div class="linha-corpo">
+        {% if e.aniversario %}Anivers&#225;rio: <b>{{ e.aniversario }}</b><br>{% endif %}
+        {% if e.demandas %}Demanda/Assunto: <b>{{ e.demandas }}</b><br>{% endif %}
+        {% if e.categoria %}Categoria: {{ e.categoria }}{% endif %}
+        {% if not e.aniversario and not e.demandas and not e.categoria %}Correspond&#234;ncia geral{% endif %}
+      </div>
+      <div class="rodape">Enviado por: {{ cand.nome_urna if cand else 'CARLISE 2233' }} &middot; {{ data_hoje }}</div>
+    </div>
+    {% else %}
+    <div class="vazio">Nenhuma etiqueta gerada.</div>
+    {% endfor %}
+  </div>
+</body>
+</html>

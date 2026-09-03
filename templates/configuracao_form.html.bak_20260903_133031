@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<div style="padding:10px 0">
+<h1>{{ 'Editar candidato' if cand else 'Novo candidato' }}</h1>
+<p style="color:#666">Preencha os dados. Eles aparecem no login, dashboard e no sistema.</p>
+<form method="post" action="{{ '/configuracao/' ~ cand.id ~ '/editar' if cand else '/configuracao/novo' }}" style="border:1px solid #ddd;border-radius:10px;padding:16px;margin:14px 0">
+  <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+    <input type="text" name="nome_completo" value="{{ cand.nome_completo if cand else '' }}" placeholder="Nome completo" style="flex:1;min-width:200px;padding:8px;border-radius:8px;border:1px solid #ccc">
+    <input type="text" name="nome_urna" value="{{ cand.nome_urna if cand else '' }}" placeholder="Nome de urna (ex: CARLISE 2233)" style="flex:1;min-width:200px;padding:8px;border-radius:8px;border:1px solid #ccc">
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+    <input type="text" name="cnpj" value="{{ cand.cnpj if cand else '' }}" placeholder="CNPJ" style="flex:1;min-width:160px;padding:8px;border-radius:8px;border:1px solid #ccc">
+    <input type="text" name="cpf" value="{{ cand.cpf if cand else '' }}" placeholder="CPF" style="flex:1;min-width:160px;padding:8px;border-radius:8px;border:1px solid #ccc">
+    <input type="text" name="numero_candidatura" value="{{ cand.numero_candidatura if cand else '2233' }}" placeholder="N&#186; candidatura" style="flex:1;min-width:140px;padding:8px;border-radius:8px;border:1px solid #ccc">
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+    <input type="text" name="cargo" value="{{ cand.cargo if cand else 'Deputada Federal' }}" placeholder="Cargo" style="flex:1;min-width:180px;padding:8px;border-radius:8px;border:1px solid #ccc">
+    <input type="text" name="partido" value="{{ cand.partido if cand else '' }}" placeholder="Partido" style="flex:1;min-width:180px;padding:8px;border-radius:8px;border:1px solid #ccc">
+    <input type="text" name="sigla_partido" value="{{ cand.sigla_partido if cand else '' }}" placeholder="Sigla" style="flex:1;min-width:80px;padding:8px;border-radius:8px;border:1px solid #ccc">
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+    <input type="text" name="coligacao" value="{{ cand.coligacao if cand else '' }}" placeholder="Coliga&#231;&#227;o / Federa&#231;&#227;o" style="flex:1;min-width:220px;padding:8px;border-radius:8px;border:1px solid #ccc">
+    <input type="text" name="municipio" value="{{ cand.municipio if cand else '' }}" placeholder="Munic&#237;pio" style="flex:1;min-width:160px;padding:8px;border-radius:8px;border:1px solid #ccc">
+    <input type="text" name="uf" value="{{ cand.uf if cand else 'PR' }}" placeholder="UF" maxlength="2" style="flex:1;min-width:60px;padding:8px;border-radius:8px;border:1px solid #ccc">
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+    <input type="date" name="data_nascimento" value="{{ cand.data_nascimento if cand else '' }}" style="flex:1;min-width:160px;padding:8px;border-radius:8px;border:1px solid #ccc">
+    <input type="email" name="email" value="{{ cand.email if cand else '' }}" placeholder="E-mail" style="flex:1;min-width:200px;padding:8px;border-radius:8px;border:1px solid #ccc">
+    <input type="text" name="telefone" value="{{ cand.telefone if cand else '' }}" placeholder="Telefone" style="flex:1;min-width:160px;padding:8px;border-radius:8px;border:1px solid #ccc">
+    <input type="text" name="site" value="{{ cand.site if cand else '' }}" placeholder="Site / redes" style="flex:1;min-width:160px;padding:8px;border-radius:8px;border:1px solid #ccc">
+
+    <input type="text" name="comite_endereco" value="{{ cand.comite_endereco if cand else '' }}" placeholder="Endere&#231;o do comit&#234; (remetente)" style="flex:1;min-width:220px;padding:8px;border-radius:8px;border:1px solid #ccc">
+    <input type="text" name="comite_telefone" value="{{ cand.comite_telefone if cand else '' }}" placeholder="Telefone do comit&#234; (remetente)" style="flex:1;min-width:160px;padding:8px;border-radius:8px;border:1px solid #ccc">
+  </div>
+  <textarea name="biografia" rows="3" placeholder="Biografia / descri&#231;&#227;o" style="width:100%;padding:8px;border-radius:8px;border:1px solid #ccc;margin-bottom:10px">{{ cand.biografia if cand else '' }}</textarea>
+  <div style="display:flex;gap:8px">
+    <a href="/configuracao" style="background:#eee;color:#333;padding:8px 16px;border-radius:8px;border:1px solid #ccc;text-decoration:none">Cancelar</a>
+    <button type="submit" style="background:#0050FF;color:#fff;padding:8px 20px;border-radius:8px;border:none;cursor:pointer">Salvar</button>
+  </div>
+</form>
+</div>
+{% endblock %}

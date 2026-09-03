@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h1>Pessoas</h1>
+<div class="sub">Cadastro de funcionarios, colaboradores, contratados, eleitores e liderancas</div>
+<form method="get" action="/pessoas" class="linha-acoes">
+  <input type="text" name="q" value="{{ q }}" placeholder="Buscar por nome, CPF ou municipio..." style="max-width:340px">
+  <button class="btn btn-p" type="submit">Buscar</button>
+</form>
+<div class="chips" style="margin-top:10px">
+  <a class="chip {{ 'ativa' if tipo == '' else '' }}" href="/pessoas">Todos</a>
+  {% for t in tipos %}
+  <a class="chip {{ 'ativa' if tipo == t else '' }}" href="/pessoas?tipo={{ t }}{{ '&q=' + q if q }}">{{ t.replace('_',' ').title() }}</a>
+  {% endfor %}
+</div>
+<div class="card">
+  <div class="linha-acoes" style="justify-content:space-between">
+    <strong>{{ lista|length }} registro(s)</strong>
+    <a class="btn btn-p" href="/pessoas/novo">+ Novo Cadastro</a>
+  </div>
+  <table>
+    <thead><tr><th>Nome</th><th>CPF</th><th>Tipo</th><th>Funcao</th><th>Municipio</th><th>Acoes</th></tr></thead>
+    <tbody>
+    {% for p in lista %}
+      <tr>
+        <td>{{ p.nome }}</td>
+        <td>{{ p.cpf }}</td>
+        <td><span class="badge b-{{ 'verde' if p.tipo == 'FUNCIONARIO' else ('amarelo' if p.tipo == 'COLABORADOR' else ('azul' if p.tipo == 'ELEITOR' else 'cinza')) }}">{{ p.tipo or '-' }}</span></td>
+        <td>{{ p.funcao or '-' }}</td>
+        <td>{{ p.municipio or '-' }}</td>
+        <td><a class="btn btn-s" href="/pessoas/{{ p.id }}">Abrir ficha</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6">Nenhum registro encontrado.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><title>Visão geral do cadastro</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; color: #000; }
+  .no-print { margin-bottom: 10px; }
+  .cab { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 14px; }
+  .cab .l1 { font-size: 18px; font-weight: bold; }
+  .cab .l2 { font-size: 13px; }
+  h2 { text-align: center; font-size: 18px; margin: 8px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { border: 1px solid #333; padding: 5px; text-align: left; vertical-align: top; }
+  th { background: #eee; width: 230px; text-transform: uppercase; font-size: 10px; }
+  .assin { display: flex; justify-content: space-between; margin-top: 40px; font-size: 12px; }
+  @media print { .no-print { display: none; } body { margin: 10mm; } }
+</style></head>
+<body>
+<div class="no-print"><button onclick="window.print()" style="padding:8px 16px">Imprimir</button> <a href="javascript:history.back()" style="margin-left:10px">Voltar</a></div>
+<div class="cab">
+  <div class="l1">{{ cand.nome_urna if cand else 'CARLISE 2233' }} &middot; {{ cand.numero_candidatura if cand else '2233' }}</div>
+  <div class="l2">{{ cand.cargo if cand else '' }}{% if cand and cand.municipio %} &middot; {{ cand.municipio }}{% endif %}{% if cand and cand.uf %} / {{ cand.uf }}{% endif %}</div>
+</div>
+<h2>Visão geral do cadastro</h2>
+<table>
+{% for col in colunas %}
+<tr><th>{{ col.replace('_',' ') }}</th><td>{{ p[col] or '' }}</td></tr>
+{% endfor %}
+</table>
+<div class="assin">
+  <div>______________________________<br>Respons&aacute;vel pelo cadastro</div>
+  <div>______________________________<br>Data: ____/____/______</div>
+</div>
+</body></html>
